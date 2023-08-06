@@ -1,8 +1,5 @@
 use git2::Repository;
-use git_url_parse::*;
-use open;
-// use std::env;
-// use url::{Host, Position, Url};
+use git_url_parse::GitUrl;
 
 fn main() {
     // println!("Hello, world!");
@@ -15,10 +12,6 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::open_from_env()?;
     let remote = repo.find_remote("origin")?;
-    // let url = remote.url().unwrap();
-    // println!("Remote Name: {:?}", remote.name().unwrap());
-    // println!("Remote URL: {:?}", url);
-    // let n = remote_to_url(&remote);
     let git_url = remote.url().ok_or("No url")?;
     let link_url = remote_url_to_repo_url(git_url)?;
     println!("{}", link_url);
