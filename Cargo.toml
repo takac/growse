@@ -6,4 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+git-url-parse = "0.4.4"
 git2 = "0.17.2"
+open = "5.0.0"
+url = "2.4.0"
