@@ -1,6 +1,7 @@
 use clap::Parser;
-use git2::Repository;
+use git2::{Remote, Repository};
 use git_url_parse::GitUrl;
+use std::path::Path;
 use url::Url;
 
 #[derive(Parser)]
@@ -17,12 +18,20 @@ struct Cli {
 
     #[arg(short, long)]
     branch: Option<String>,
+    // use current branch
+    // #[arg(short, long)]
+    // current_branch: bool,
 }
 
+#[derive(Clone)]
 struct GitOpenConfig {
     is_open_link: bool,
     verbose: bool,
     branch: Option<String>,
+    path: Option<String>,
+    default_branch: Option<String>,
+    current_dir: Option<String>,
+    repo_dir: Option<String>,
 }
 
 fn main() {
@@ -34,6 +43,16 @@ fn main() {
         is_open_link: !cli.no_show,
         verbose: cli.verbose,
         branch: cli.branch,
+        path: cli.path,
+        default_branch: None,
+        current_dir: Some(
+            std::env::current_dir()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
+        ),
+        repo_dir: None,
     };
     if let Err(e) = run(&config) {
         eprintln!("Error: {}", e);
@@ -43,16 +62,55 @@ fn main() {
 
 fn run(config: &GitOpenConfig) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::open_from_env()?;
+    // TODO list/choose remote!
     let remote = repo.find_remote("origin")?;
     let git_url = remote.url().ok_or("No url")?;
-    let link_url = remote_url_to_repo_url(git_url, config)?;
 
+    let mut config = config.clone();
+    config.default_branch = default_head(&repo, &remote, &config);
+    config.repo_dir = Some(repo.path().parent().unwrap().to_str().unwrap().to_string());
+
+    if config.verbose {
+        println!("repo_dir: {:?}", config.repo_dir);
+    }
+
+    let link_url = remote_url_to_repo_url(git_url, &config)?;
     if config.is_open_link {
         open_link(&link_url)?;
     } else {
         println!("{}", link_url);
     }
     Ok(())
+}
+
+fn default_head(repo: &Repository, remote: &Remote, config: &GitOpenConfig) -> Option<String> {
+    let default_branch = remote.default_branch();
+    if let Ok(default_branch) = default_branch {
+        if config.verbose {
+            println!("default_branch: {:?}", config.default_branch);
+        }
+        return Some(default_branch.as_str().unwrap().to_string());
+    } else {
+        let remote_ref = format!("refs/remotes/{}/HEAD", remote.name().unwrap());
+        let reference = repo.resolve_reference_from_short_name(&remote_ref);
+        if let Ok(reference) = reference {
+            let remote_ref_prefix = format!("refs/remotes/{}/", remote.name().unwrap());
+            let name = reference.name();
+            let short_name = Path::new(name.unwrap())
+                .strip_prefix(remote_ref_prefix)
+                .unwrap();
+            if config.verbose {
+                println!("reference name: {:?}", name);
+                println!("resolved: {:?}", short_name);
+            }
+            if short_name != Path::new("HEAD") {
+                return Some(short_name.to_str().unwrap().to_string());
+            }
+        } else if config.verbose {
+            println!("Could not resolve reference: {:?}", remote_ref);
+        }
+    }
+    None
 }
 
 fn remote_url_to_repo_url(
@@ -96,7 +154,32 @@ fn remote_url_to_repo_url(
         let new_url = format!("https://{}/{}/{}/{}", host, organization, owner, url.name);
         return Ok(new_url);
     }
-    if config.branch.is_some() {
+
+    if config.path.is_some() {
+        let branch = if config.branch.is_some() {
+            config.branch.as_ref().unwrap()
+        } else {
+            let default_branch = &config.default_branch;
+            if default_branch.is_some() {
+                default_branch.as_ref().unwrap()
+            } else {
+                println!("Warning: No default branch found, defaulting to master");
+                "master"
+            }
+        };
+        let path = if config.current_dir == config.repo_dir {
+            config.path.as_ref().unwrap().clone()
+        } else {
+            let repo_dir = config.repo_dir.as_ref().unwrap();
+            let current_dir = config.current_dir.as_ref().unwrap();
+            let offset_path = current_dir.strip_prefix(&format!("{}/", repo_dir)).unwrap();
+            format!("{}/{}", offset_path, config.path.as_ref().unwrap())
+        };
+        Ok(format!(
+            "https://{}/{}/blob/{}/{}",
+            host, url.fullname, branch, path,
+        ))
+    } else if config.branch.is_some() {
         Ok(format!(
             "https://{}/{}/tree/{}",
             host,
@@ -119,6 +202,10 @@ mod tests {
         is_open_link: true,
         verbose: false,
         branch: None,
+        path: None,
+        default_branch: None,
+        current_dir: None,
+        repo_dir: None,
     };
 
     #[test]
@@ -170,6 +257,10 @@ mod tests {
         ];
         let config = super::GitOpenConfig {
             branch: Some("master".to_string()),
+            path: None,
+            default_branch: None,
+            current_dir: None,
+            repo_dir: None,
             ..TEST_CONFIG
         };
 
@@ -190,6 +281,10 @@ mod tests {
     fn test_bb_repo_link_with_branch() {
         let config = super::GitOpenConfig {
             branch: Some("master".to_string()),
+            path: None,
+            default_branch: None,
+            current_dir: None,
+            repo_dir: None,
             ..TEST_CONFIG
         };
 
@@ -199,5 +294,63 @@ mod tests {
             expected,
             super::remote_url_to_repo_url(url, &config).unwrap()
         );
+    }
+
+    #[test]
+    fn test_simple_repo_link_with_path() {
+        let remote_urls = &[
+            "ssh://git@github.com/takac/git-open",
+            "https://github.com/takac/git-open",
+            "git@github.com:takac/git-open",
+        ];
+        let config = super::GitOpenConfig {
+            branch: None,
+            path: Some("src/main.rs".to_string()),
+            default_branch: Some("main".to_string()),
+            current_dir: Some("/home/takac/git-open".to_string()),
+            repo_dir: Some("/home/takac/git-open".to_string()),
+            ..TEST_CONFIG
+        };
+
+        for url in remote_urls {
+            let expected = "https://github.com/takac/git-open/blob/main/src/main.rs";
+            assert_eq!(
+                expected,
+                super::remote_url_to_repo_url(url, &config).unwrap()
+            );
+            assert_eq!(
+                expected,
+                super::remote_url_to_repo_url(&format!("{}.git", url), &config).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn test_simple_repo_link_with_path_not_at_root() {
+        let remote_urls = &[
+            "ssh://git@github.com/takac/git-open",
+            "https://github.com/takac/git-open",
+            "git@github.com:takac/git-open",
+        ];
+        let config = super::GitOpenConfig {
+            branch: None,
+            path: Some("main.rs".to_string()),
+            default_branch: Some("main".to_string()),
+            current_dir: Some("/home/takac/git-open/src".to_string()),
+            repo_dir: Some("/home/takac/git-open".to_string()),
+            ..TEST_CONFIG
+        };
+
+        for url in remote_urls {
+            let expected = "https://github.com/takac/git-open/blob/main/src/main.rs";
+            assert_eq!(
+                expected,
+                super::remote_url_to_repo_url(url, &config).unwrap()
+            );
+            assert_eq!(
+                expected,
+                super::remote_url_to_repo_url(&format!("{}.git", url), &config).unwrap()
+            );
+        }
     }
 }
