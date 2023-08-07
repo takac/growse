@@ -8,13 +8,14 @@
   };
   outputs = { self, nixpkgs, treefmt-nix, systems, pre-commit-hooks, flake-utils }:
     let
+      forAllSystems = nixpkgs.lib.genAttrs (import systems);
       eachSystem = f: nixpkgs.lib.genAttrs (import systems) (system: f nixpkgs.legacyPackages.${system});
-      treefmtEval = eachSystem (pkgs: treefmt-nix.lib.evalModule pkgs ./treefmt.nix);
+      treefmtEval = forAllSystems (system: treefmt-nix.lib.evalModule nixpkgs.legacyPackages.${system} ./treefmt.nix);
     in
     {
-      formatter = eachSystem (pkgs: treefmtEval.${pkgs.system}.config.build.wrapper);
+      formatter = forAllSystems (system: treefmtEval.${system}.config.build.wrapper);
       checks = {
-        pre-commit-check = eachSystem (pkgs: pre-commit-hooks.lib.${pkgs.system}.run {
+        pre-commit-check = forAllSystems (system: pre-commit-hooks.lib.${system}.run {
           src = ./.;
           hooks = {
             rustfmt.enable = true;
@@ -24,7 +25,9 @@
         });
       };
 
-      defaultPackage = eachSystem (pkgs: nixpkgs.legacyPackages.${pkgs.system}.callPackage ./. { });
+      packages = forAllSystems (system: {
+        default = nixpkgs.legacyPackages.${system}.callPackage ./. { };
+      });
 
       # devShell = nixpkgs.legacyPackages.${system}.mkShell {
       #    inherit (self.checks.${system}.pre-commit-check) shellHook;
