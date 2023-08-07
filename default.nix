@@ -4,6 +4,7 @@ pkgs.rustPlatform.buildRustPackage {
   version = "0.1";
   cargoLock.lockFile = ./Cargo.lock;
   src = pkgs.lib.cleanSource ./.;
+  nativeBuildInputs = [ pkgs.pkgconfig ];
   buildInputs = (
     if (pkgs.stdenv.isDarwin) then
       [
@@ -13,7 +14,6 @@ pkgs.rustPlatform.buildRustPackage {
     else
       [
         pkgs.openssl
-        pkgs.pkgconfig
       ]
   );
 }

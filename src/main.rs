@@ -1,6 +1,7 @@
 use clap::Parser;
 use git2::{Remote, Repository};
 use git_url_parse::GitUrl;
+use regex::Regex;
 use std::path::Path;
 use url::Url;
 
@@ -29,6 +30,7 @@ struct GitOpenConfig {
     verbose: bool,
     branch: Option<String>,
     path: Option<String>,
+    line_number: Option<u32>,
     default_branch: Option<String>,
     current_dir: Option<String>,
     repo_dir: Option<String>,
@@ -36,14 +38,27 @@ struct GitOpenConfig {
 
 fn main() {
     let cli = Cli::parse();
-    if let Some(path) = cli.path.as_deref() {
-        println!("Value for path: {path}");
-    }
+
+    let (path, line_number) = if let Some(path) = cli.path.as_deref() {
+        let re = Regex::new(r"(.*?)((:)(\d+))?$").unwrap();
+        let captures = re.captures(path).unwrap();
+        let path = captures.get(1).unwrap().as_str().to_string();
+        if let Some(line_number) = captures.get(4) {
+            let x = line_number.as_str().parse::<u32>().unwrap();
+            (Some(path), Some(x))
+        } else {
+            (Some(path), None)
+        }
+    } else {
+        (None, None)
+    };
+
     let config = GitOpenConfig {
         is_open_link: !cli.no_show,
         verbose: cli.verbose,
         branch: cli.branch,
-        path: cli.path,
+        path,
+        line_number,
         default_branch: None,
         current_dir: Some(
             std::env::current_dir()
@@ -175,10 +190,18 @@ fn remote_url_to_repo_url(
             let offset_path = current_dir.strip_prefix(&format!("{}/", repo_dir)).unwrap();
             format!("{}/{}", offset_path, config.path.as_ref().unwrap())
         };
-        Ok(format!(
-            "https://{}/{}/blob/{}/{}",
-            host, url.fullname, branch, path,
-        ))
+        if config.line_number.is_some() {
+            let line = config.line_number.unwrap();
+            Ok(format!(
+                "https://{}/{}/blob/{}/{}#L{}",
+                host, url.fullname, branch, path, line,
+            ))
+        } else {
+            Ok(format!(
+                "https://{}/{}/blob/{}/{}",
+                host, url.fullname, branch, path,
+            ))
+        }
     } else if config.branch.is_some() {
         Ok(format!(
             "https://{}/{}/tree/{}",
@@ -206,6 +229,7 @@ mod tests {
         default_branch: None,
         current_dir: None,
         repo_dir: None,
+        line_number: None,
     };
 
     #[test]
@@ -350,6 +374,32 @@ mod tests {
             assert_eq!(
                 expected,
                 super::remote_url_to_repo_url(&format!("{}.git", url), &config).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn test_simple_repo_link_with_path_line_nos() {
+        let remote_urls = &[
+            "ssh://git@github.com/takac/git-open",
+            "https://github.com/takac/git-open",
+            "git@github.com:takac/git-open",
+        ];
+        let config = super::GitOpenConfig {
+            branch: None,
+            path: Some("main.rs".to_string()),
+            line_number: Some(10),
+            default_branch: Some("main".to_string()),
+            current_dir: Some("/home/takac/git-open/src".to_string()),
+            repo_dir: Some("/home/takac/git-open".to_string()),
+            ..TEST_CONFIG
+        };
+
+        for url in remote_urls {
+            let expected = "https://github.com/takac/git-open/blob/main/src/main.rs#L10";
+            assert_eq!(
+                expected,
+                super::remote_url_to_repo_url(url, &config).unwrap()
             );
         }
     }
