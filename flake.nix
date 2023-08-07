@@ -15,9 +15,15 @@
             src = ./.;
             hooks = {
               rustfmt.enable = true;
-              clippy.enable = true;
+              # FIXME not working
+              # clippy.enable = true;
               cargo-check.enable = true;
               nixpkgs-fmt.enable = true;
+            };
+            settings = {
+              clippy.offline = false;
+              clippy.allFeatures = true;
+              clippy.denyWarnings = true;
             };
           };
         };
@@ -26,14 +32,12 @@
           default = nixpkgs.legacyPackages.${system}.callPackage ./. { };
         };
 
-        devShell = nixpkgs.legacyPackages.${system}.mkShell {
-          inherit (self.checks.${system}.pre-commit-check) shellHook;
+        devShells = {
+          defualt = nixpkgs.legacyPackages.${system}.mkShell {
+            inherit (self.checks.${system}.pre-commit-check) shellHook;
+            # buildInputs = [ nixpkgs.legacyPackages.${system}.git ];
+          };
         };
 
-        # devShell = {
-        #   default = pkgsFor.${system}.mkShell {
-        #     buildInputs = [ pkgsFor.${system}.git ];
-        #   };
-        # };
       });
 }
