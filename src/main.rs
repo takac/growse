@@ -5,23 +5,23 @@ use regex::Regex;
 use std::path::Path;
 use url::Url;
 
-#[derive(Parser)]
+#[derive(Parser, Clone, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     // Path to file in repo
     path: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(short, long, default_value_t = false)]
     no_show: bool,
 
-    #[arg(short, long)]
+    #[arg(short, long, default_value_t = false)]
     verbose: bool,
 
-    #[arg(short, long)]
+    #[arg(short, long, env = "GIT_OPEN_BRANCH")]
     branch: Option<String>,
-    // use current branch
-    // #[arg(short, long)]
-    // current_branch: bool,
+
+    #[clap(short, long, env = "GIT_OPEN_REMOTE_NAME")]
+    remote_name: Option<String>,
 }
 
 #[derive(Clone)]
@@ -34,11 +34,12 @@ struct GitOpenConfig {
     default_branch: Option<String>,
     current_dir: Option<String>,
     repo_dir: Option<String>,
+    remote_name: Option<String>,
 }
 
 fn main() {
     let cli = Cli::parse();
-
+    // cli.try_into().unwrap();
     let (path, line_number) = if let Some(path) = cli.path.as_deref() {
         let re = Regex::new(r"(.*?)((:)(\d+))?$").unwrap();
         let captures = re.captures(path).unwrap();
@@ -57,6 +58,7 @@ fn main() {
         is_open_link: !cli.no_show,
         verbose: cli.verbose,
         branch: cli.branch,
+        remote_name: cli.remote_name,
         path,
         line_number,
         default_branch: None,
@@ -77,8 +79,8 @@ fn main() {
 
 fn run(config: &GitOpenConfig) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::open_from_env()?;
-    // TODO list/choose remote!
-    let remote = repo.find_remote("origin")?;
+    let remote_name = remote_name(&repo, config)?;
+    let remote = repo.find_remote(&remote_name)?;
     let git_url = remote.url().ok_or("No url")?;
 
     let mut config = config.clone();
@@ -96,6 +98,29 @@ fn run(config: &GitOpenConfig) -> Result<(), Box<dyn std::error::Error>> {
         println!("{}", link_url);
     }
     Ok(())
+}
+
+fn remote_name(
+    repo: &Repository,
+    config: &GitOpenConfig,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let binding = repo.remotes()?;
+    let remotes = binding.iter().collect::<Vec<Option<&str>>>();
+    if config.remote_name.is_some() {
+        let remote_c = config.remote_name.as_ref().unwrap();
+        Ok(remote_c.to_string())
+    } else if remotes.is_empty() {
+        Err("No remote".into())
+    } else if remotes.len() > 1 {
+        // TODO config for preference?
+        println!(
+            "Warning: Multiple remotes: {:?}, choosing first {:?}",
+            remotes, remotes[0]
+        );
+        Ok(remotes[0].unwrap().to_string())
+    } else {
+        Ok(remotes[0].unwrap().to_string())
+    }
 }
 
 fn default_head(repo: &Repository, remote: &Remote, config: &GitOpenConfig) -> Option<String> {
@@ -230,6 +255,7 @@ mod tests {
         current_dir: None,
         repo_dir: None,
         line_number: None,
+        remote_name: None,
     };
 
     #[test]
@@ -285,6 +311,7 @@ mod tests {
             default_branch: None,
             current_dir: None,
             repo_dir: None,
+            remote_name: None,
             ..TEST_CONFIG
         };
 
@@ -309,6 +336,7 @@ mod tests {
             default_branch: None,
             current_dir: None,
             repo_dir: None,
+            remote_name: None,
             ..TEST_CONFIG
         };
 
@@ -333,6 +361,7 @@ mod tests {
             default_branch: Some("main".to_string()),
             current_dir: Some("/home/takac/git-open".to_string()),
             repo_dir: Some("/home/takac/git-open".to_string()),
+            remote_name: None,
             ..TEST_CONFIG
         };
 
@@ -362,6 +391,7 @@ mod tests {
             default_branch: Some("main".to_string()),
             current_dir: Some("/home/takac/git-open/src".to_string()),
             repo_dir: Some("/home/takac/git-open".to_string()),
+            remote_name: None,
             ..TEST_CONFIG
         };
 
@@ -392,6 +422,7 @@ mod tests {
             default_branch: Some("main".to_string()),
             current_dir: Some("/home/takac/git-open/src".to_string()),
             repo_dir: Some("/home/takac/git-open".to_string()),
+            remote_name: None,
             ..TEST_CONFIG
         };
 
