@@ -221,7 +221,7 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()
                 .to_string(),
         ),
-        repo_dir: Some(repo.path().parent().unwrap().to_str().unwrap().to_string()),
+        repo_dir: Some(repo.path().parent().ok_or("No parent found")?.to_string_lossy().to_string()),
     };
     let remote_name = remote_name(&repo, &state)?;
     let remote = repo.find_remote(&remote_name)?;
