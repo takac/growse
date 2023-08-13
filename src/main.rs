@@ -1,9 +1,14 @@
+mod bitbucket;
+mod github;
+mod gitlab;
+
 use clap::Parser;
 use git2::{Remote, Repository};
 use git_url_parse::GitUrl;
 use regex::Regex;
 use serde::Deserialize;
 // use std::collections::HashMap;
+use duplicate::duplicate;
 use std::path::Path;
 use url::Url;
 
@@ -61,9 +66,86 @@ struct GrowseState {
     branch: Option<String>,
 }
 
+trait RepoUrler {
+    fn to_url(&self) -> Result<String, Box<dyn std::error::Error>>;
+}
+
+trait Repo {
+    fn is_host(&self) -> bool;
+    fn to_repo_url(&self) -> Result<String, Box<dyn std::error::Error>>;
+    fn to_repo_url_with_branch(&self) -> Result<String, Box<dyn std::error::Error>>;
+    fn to_repo_url_with_path(&self) -> Result<String, Box<dyn std::error::Error>>;
+    fn to_repo_url_with_path_and_branch(&self) -> Result<String, Box<dyn std::error::Error>>;
+    fn to_repo_url_with_path_and_line_number(&self) -> Result<String, Box<dyn std::error::Error>>;
+    fn to_repo_url_with_path_and_branch_and_line_number(
+        &self,
+    ) -> Result<String, Box<dyn std::error::Error>>;
+}
+
+duplicate! {
+    [ name; [BitBucket]; [GitHub]; [GitLab] ]
+    pub struct name {
+        url: GitUrl,
+        config: GrowseConfig,
+        state: GrowseState,
+    }
+    impl RepoUrler for name {
+        fn to_url(&self) -> Result<String, Box<dyn std::error::Error>> {
+            if self.config.use_branch {
+                if self.state.path.is_some() {
+                    self.to_repo_url_with_path()
+                } else {
+                    self.to_repo_url_with_branch()
+                }
+            } else if self.state.path.is_some() {
+                if self.state.line_number.is_some() {
+                    self.to_repo_url_with_path_and_line_number()
+                } else {
+                    self.to_repo_url_with_path()
+                }
+            } else {
+                self.to_repo_url()
+            }
+        }
+    }
+}
+
+fn remote_url_to_repo_url(
+    url: &str,
+    state: &GrowseState,
+    config: &GrowseConfig,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let url = GitUrl::parse(url)?;
+
+    let github = GitHub {
+        url: url.clone(),
+        config: config.clone(),
+        state: state.clone(),
+    };
+    let gitlab = GitLab {
+        url: url.clone(),
+        config: config.clone(),
+        state: state.clone(),
+    };
+    let bitbucket = BitBucket {
+        url,
+        config: config.clone(),
+        state: state.clone(),
+    };
+
+    if github.is_host() {
+        github.to_url()
+    } else if gitlab.is_host() {
+        gitlab.to_url()
+    } else if bitbucket.is_host() {
+        bitbucket.to_url()
+    } else {
+        panic!("Unknown host")
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
-    // cli.try_into().unwrap();
     if let Err(e) = run(&cli) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -81,6 +163,7 @@ fn merge_config_cli(cli: &Cli, config: &GrowseConfig) -> GrowseConfig {
     }
     config
 }
+
 fn config(cli: &Cli) -> Result<GrowseConfig, Box<dyn std::error::Error>> {
     // use given config file
     if let Some(config_file) = cli.config_file.as_ref() {
@@ -209,359 +292,6 @@ fn default_branch(repo: &Repository, remote: &Remote, config: &GrowseConfig) -> 
     }
     // TODO fall back to master or main?? lookup local remote branches?
     None
-}
-
-#[derive(Clone)]
-struct BitBucket {
-    url: GitUrl,
-    config: GrowseConfig,
-    state: GrowseState,
-}
-
-#[derive(Clone)]
-struct GitHub {
-    url: GitUrl,
-    config: GrowseConfig,
-    state: GrowseState,
-}
-
-#[derive(Clone)]
-struct GitLab {
-    url: GitUrl,
-    config: GrowseConfig,
-    state: GrowseState,
-}
-
-trait RepoUrler {
-    fn to_url(&self) -> Result<String, Box<dyn std::error::Error>>;
-}
-
-trait Repo {
-    fn is_host(&self) -> bool;
-    fn to_repo_url(&self) -> Result<String, Box<dyn std::error::Error>>;
-    fn to_repo_url_with_branch(&self) -> Result<String, Box<dyn std::error::Error>>;
-    fn to_repo_url_with_path(&self) -> Result<String, Box<dyn std::error::Error>>;
-    fn to_repo_url_with_path_and_branch(&self) -> Result<String, Box<dyn std::error::Error>>;
-    fn to_repo_url_with_path_and_line_number(&self) -> Result<String, Box<dyn std::error::Error>>;
-    fn to_repo_url_with_path_and_branch_and_line_number(
-        &self,
-    ) -> Result<String, Box<dyn std::error::Error>>;
-}
-
-impl RepoUrler for BitBucket {
-    fn to_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-        if self.config.use_branch {
-            if self.state.path.is_some() {
-                self.to_repo_url_with_path()
-            } else {
-                self.to_repo_url_with_branch()
-            }
-        } else if self.state.path.is_some() {
-            self.to_repo_url_with_path()
-        } else {
-            self.to_repo_url()
-        }
-    }
-}
-
-impl RepoUrler for GitHub {
-    fn to_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-        if self.config.use_branch {
-            if self.state.path.is_some() {
-                self.to_repo_url_with_path()
-            } else {
-                self.to_repo_url_with_branch()
-            }
-        } else if self.state.path.is_some() {
-            if self.state.line_number.is_some() {
-                self.to_repo_url_with_path_and_line_number()
-            } else {
-                self.to_repo_url_with_path()
-            }
-        } else {
-            self.to_repo_url()
-        }
-    }
-}
-
-impl RepoUrler for GitLab {
-    fn to_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-        if self.config.use_branch {
-            if self.state.path.is_some() {
-                self.to_repo_url_with_path()
-            } else {
-                self.to_repo_url_with_branch()
-            }
-        } else if self.state.path.is_some() {
-            self.to_repo_url_with_path()
-        } else {
-            self.to_repo_url()
-        }
-    }
-}
-
-impl Repo for BitBucket {
-    fn is_host(&self) -> bool {
-        self.url.host.as_ref().unwrap().contains("bitbucket") || self.url.port == Some(7999)
-    }
-
-    fn to_repo_url_with_path_and_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path_and_branch_and_line_number(
-        &self,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path_and_line_number(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let host = self.url.host.clone().ok_or("No host found")?;
-        let owner = self.url.owner.clone().ok_or("No owner found")?;
-
-        let branch_name = format!(
-            "refs/heads/{}",
-            self.state.branch.as_ref().ok_or("No branch found")?
-        );
-
-        let new_url = Url::parse_with_params(
-            &format!(
-                "https://{}/projects/{}/repos/{}/browse",
-                host, owner, self.url.name
-            ),
-            &[("at", branch_name.as_str())],
-        )?;
-
-        Ok(new_url.to_string())
-    }
-
-    fn to_repo_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-        // https://opensource.ncsa.illinois.edu/bitbucket/scm/bd/bdcli.git
-        // https://opensource.ncsa.illinois.edu/bitbucket/projects/bd/repos/bdcli/browse
-
-        // https://bitbucket.gi.de/scm/dig/frontend.git
-        // https://bitbucket.gi.de/projects/DIG/repos/frontend/browse
-
-        let host = self.url.host.clone().ok_or("No host found")?;
-        let owner = self.url.owner.clone().ok_or("No owner found")?;
-
-        Ok(format!(
-            "https://{}/projects/{}/repos/{}",
-            host, owner, self.url.name
-        ))
-    }
-}
-
-// use proc_macro::TokenStream;
-// use quote::quote;
-// use syn;
-
-// #[proc_macro_derive(RepoMacro)]
-// pub fn to_repo_derive(input: TokenStream) -> TokenStream {
-//     // Construct a representation of Rust code as a syntax tree
-//     // that we can manipulate
-//     let ast = syn::parse(input).unwrap();
-
-//     // Build the trait implementation
-//     impl_repo_macro(&ast)
-// }
-
-// fn impl_repo_macro(ast: &syn::DeriveInput) -> TokenStream {
-//     let name = &ast.ident;
-//     let gen = quote! {
-//         impl RepoUrler for #name {
-//             fn to_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-//                 if self.config.use_branch {
-//                     if self.state.path.is_some() {
-//                         self.to_repo_url_with_path()
-//                     } else {
-//                         self.to_repo_url_with_branch()
-//                     }
-//                 } else if self.state.path.is_some() {
-//                     self.to_repo_url_with_path()
-//                 } else {
-//                     self.to_repo_url()
-//                 }
-//             }
-//         }
-//     };
-//     gen.into()
-// }
-
-impl Repo for GitHub {
-    fn is_host(&self) -> bool {
-        self.url.host.as_ref().unwrap().contains("github")
-    }
-    //     if self.state.line_number.is_some() {
-    //         let line = self.state.line_number.unwrap();
-    //         Ok(format!(
-    //             "https://{}/{}/blob/{}/{}#L{}",
-    //             host, self.url.fullname, branch, path, line,
-    //         ))
-
-    fn to_repo_url_with_path_and_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path_and_branch_and_line_number(
-        &self,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path_and_line_number(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Ok(format!(
-            "{}#L{}",
-            self.to_repo_url_with_path().unwrap(),
-            self.state.line_number.unwrap()
-        ))
-    }
-
-    fn to_repo_url_with_path(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let host = self.url.host.clone().ok_or("No host found")?;
-        let branch = self.state.branch.as_ref().unwrap();
-
-        let path = if self.state.current_dir == self.state.repo_dir {
-            self.state.path.as_ref().unwrap().clone()
-        } else {
-            let repo_dir = self.state.repo_dir.as_ref().unwrap();
-            let current_dir = self.state.current_dir.as_ref().unwrap();
-            let offset_path = current_dir.strip_prefix(&format!("{}/", repo_dir)).unwrap();
-            format!("{}/{}", offset_path, self.state.path.as_ref().unwrap())
-        };
-        Ok(format!(
-            "https://{}/{}/blob/{}/{}",
-            host, self.url.fullname, branch, path,
-        ))
-    }
-
-    fn to_repo_url_with_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let host = self.url.host.clone().ok_or("No host found")?;
-
-        Ok(format!(
-            "https://{}/{}/tree/{}",
-            host,
-            self.url.fullname,
-            self.state.branch.as_ref().unwrap()
-        ))
-    }
-
-    fn to_repo_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-        // https://docs.er.kcl.ac.uk/CREATE/web/git/
-        //  git@github.kcl.ac.uk:USERNAME/REPO.git
-        let host = self.url.host.clone().ok_or("No host found")?;
-        Ok(format!("https://{}/{}", host, self.url.fullname))
-    }
-}
-
-impl Repo for GitLab {
-    fn is_host(&self) -> bool {
-        self.url.host.as_ref().unwrap().contains("gitlab")
-    }
-
-    fn to_repo_url_with_path_and_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path_and_branch_and_line_number(
-        &self,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_path_and_line_number(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Err("Not implemented".into())
-    }
-
-    fn to_repo_url_with_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let host = self.url.host.clone().ok_or("No host found")?;
-        let owner = self.url.owner.clone().ok_or("No owner found")?;
-        let branch_name = format!("refs/heads/{}", self.state.branch.as_ref().unwrap());
-        let new_url = Url::parse_with_params(
-            &format!(
-                "https://{}/{}/{}/-/tree/{}",
-                host, owner, self.url.name, branch_name
-            ),
-            &[("at", branch_name)],
-        )?;
-        Ok(new_url.as_str().to_string())
-    }
-
-    fn to_repo_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-        if self.config.verbose {
-            println!("gitlab_url_to_repo_url: {:?}", self.url);
-        }
-        // git@gitlab.com:gitlab-com/gl-infra/gitlab-dedicated/library/terraform/cloudwatch_log_export.git
-        // https://gitlab.com/gitlab-com/gl-infra/gitlab-dedicated/library/terraform/cloudwatch_log_export.git
-        // default head
-        // https://gitlab.com/gitlab-com/gl-infra/gitlab-dedicated/library/terraform/cloudwatch_log_export
-        // branch
-        // https://gitlab.com/gitlab-com/gl-infra/gitlab-dedicated/library/terraform/cloudwatch_log_export/-/tree/1.1.0?ref_type=tags
-
-        let host = self.url.host.clone().ok_or("No host found")?;
-        let owner = self.url.owner.clone().ok_or("No owner found")?;
-        let parts = self
-            .url
-            .path
-            .trim_matches('/')
-            .split('/')
-            .collect::<Vec<&str>>();
-
-        // FIXME this doesn't really work
-        let organization = parts[0];
-        // use path??
-        let new_url = format!(
-            "https://{}/{}/{}/{}",
-            host, organization, owner, self.url.name
-        );
-        Ok(new_url)
-    }
-}
-
-fn remote_url_to_repo_url(
-    url: &str,
-    state: &GrowseState,
-    config: &GrowseConfig,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let url = GitUrl::parse(url)?;
-
-    let github = GitHub {
-        url: url.clone(),
-        config: config.clone(),
-        state: state.clone(),
-    };
-    let gitlab = GitLab {
-        url: url.clone(),
-        config: config.clone(),
-        state: state.clone(),
-    };
-    let bitbucket = BitBucket {
-        url,
-        config: config.clone(),
-        state: state.clone(),
-    };
-
-    if github.is_host() {
-        github.to_url()
-    } else if gitlab.is_host() {
-        gitlab.to_url()
-    } else if bitbucket.is_host() {
-        bitbucket.to_url()
-    } else {
-        panic!("Unknown host")
-    }
 }
 
 fn open_link(url: &str) -> Result<(), Box<dyn std::error::Error>> {

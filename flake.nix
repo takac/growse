@@ -1,5 +1,5 @@
 {
-  description = "git-open-rs";
+  description = "growse";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     treefmt-nix.url = "github:numtide/treefmt-nix";

@@ -1,5 +1,5 @@
 [package]
-name = "git-open-rs"
+name = "growse"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,3 +13,4 @@ regex = "1.9.3"
 serde = { version = "1.0.183", features = ["derive"] }
 toml = "0.7.6"
 url = "2.4.0"
+duplicate = "1.0.0"
