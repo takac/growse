@@ -2,20 +2,24 @@ mod bitbucket;
 mod github;
 mod gitlab;
 
-use clap::Parser;
+use clap::CommandFactory;
+use clap::*;
+use clap_complete::*;
 use git2::{Remote, Repository};
 use git_url_parse::GitUrl;
 use regex::Regex;
 use serde::Deserialize;
+use std::io;
 // use std::collections::HashMap;
 use duplicate::duplicate;
 use std::path::Path;
 use url::Url;
 
-#[derive(Parser, Clone, Debug)]
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     // Path to file in repo
+    #[arg(value_hint = ValueHint::FilePath)]
     path: Option<String>,
 
     #[arg(short, long)]
@@ -27,11 +31,14 @@ struct Cli {
     #[arg(short, long, env = "GROWSE_BRANCH")]
     branch: Option<String>,
 
-    #[clap(short, long, env = "GROWSE_REMOTE")]
+    #[arg(short, long, env = "GROWSE_REMOTE")]
     remote: Vec<String>,
 
-    #[clap(short, long, env = "GROWSE_CONFIG_FILE")]
+    #[arg(short, long, env = "GROWSE_CONFIG_FILE")]
     config_file: Option<String>,
+
+    #[arg(long, value_name = "SHELL", value_parser, hide = true)]
+    completion: Option<Shell>,
 }
 
 // TODO XDG_CONFIG_HOME
@@ -146,6 +153,13 @@ fn remote_url_to_repo_url(
 
 fn main() {
     let cli = Cli::parse();
+
+    if let Some(shell) = cli.completion {
+        let mut c = Cli::command();
+        let name = c.get_name().to_string();
+        generate(shell, &mut c, name, &mut io::stdout());
+        std::process::exit(0);
+    }
     if let Err(e) = run(&cli) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -221,7 +235,13 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap()
                 .to_string(),
         ),
-        repo_dir: Some(repo.path().parent().ok_or("No parent found")?.to_string_lossy().to_string()),
+        repo_dir: Some(
+            repo.path()
+                .parent()
+                .ok_or("No parent found")?
+                .to_string_lossy()
+                .to_string(),
+        ),
     };
     let remote_name = remote_name(&repo, &state)?;
     let remote = repo.find_remote(&remote_name)?;
