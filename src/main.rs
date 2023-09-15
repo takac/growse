@@ -32,7 +32,7 @@ struct Cli {
     branch: Option<String>,
 
     #[arg(short, long, env = "GROWSE_REMOTE")]
-    remote: Vec<String>,
+    remote: Option<String>,
 
     #[arg(short, long, env = "GROWSE_CONFIG_FILE")]
     config_file: Option<String>,
@@ -67,10 +67,10 @@ struct GrowseConfig {
 struct GrowseState {
     path: Option<String>,
     line_number: Option<u32>,
-    current_dir: Option<String>,
-    repo_dir: Option<String>,
-    remote_name: Option<String>,
-    branch: Option<String>,
+    current_dir: String,
+    repo_dir: String,
+    // remote_name: String,
+    branch: String,
 }
 
 trait RepoUrler {
@@ -100,7 +100,11 @@ duplicate! {
         fn to_url(&self) -> Result<String, Box<dyn std::error::Error>> {
             if self.config.use_branch {
                 if self.state.path.is_some() {
-                    self.to_repo_url_with_path()
+                    if self.state.line_number.is_some() {
+                        self.to_repo_url_with_path_and_branch_and_line_number()
+                    } else {
+                        self.to_repo_url_with_path_and_branch()
+                    }
                 } else {
                     self.to_repo_url_with_branch()
                 }
@@ -207,6 +211,7 @@ fn config(cli: &Cli) -> Result<GrowseConfig, Box<dyn std::error::Error>> {
 fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config = config(cli)?;
 
+    // TODO check if file exists locally??
     let (path, line_number) = if let Some(path) = cli.path.as_deref() {
         let re = Regex::new(r"(.*?)((:)(\d+))?$").unwrap();
         let captures = re.captures(path).unwrap();
@@ -223,31 +228,37 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     let repo = Repository::open_from_env()?;
 
-    let mut state = GrowseState {
+    let remote_name = if cli.remote.is_none() {
+        default_remote(&repo)
+    } else {
+        // TODO Manually check remote exists in repo??
+        cli.remote.clone().unwrap()
+    };
+    let remote = repo.find_remote(&remote_name)?;
+
+    let branch = if cli.branch.is_some() {
+        cli.branch.clone().unwrap()
+    } else {
+        default_branch(&repo, &remote, &config)
+    };
+
+    let git_url = remote.url().ok_or("No url found for remote")?;
+
+    let state = GrowseState {
         path,
         line_number,
-        remote_name: None,
-        branch: None,
-        current_dir: Some(
-            std::env::current_dir()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_string(),
-        ),
-        repo_dir: Some(
-            repo.path()
-                .parent()
-                .ok_or("No parent found")?
-                .to_string_lossy()
-                .to_string(),
-        ),
+        // remote_name,
+        branch,
+        current_dir: std::env::current_dir()?.to_str().unwrap().to_string(),
+        repo_dir: repo
+            .path()
+            .parent()
+            .ok_or("No parent found")?
+            .to_string_lossy()
+            .to_string(),
     };
-    let remote_name = remote_name(&repo, &state)?;
-    let remote = repo.find_remote(&remote_name)?;
-    let git_url = remote.url().ok_or("No url")?;
 
-    state.branch = default_branch(&repo, &remote, &config);
+    println!("branch: {:?}", state.branch);
 
     if config.verbose {
         println!("repo_dir: {:?}", state.repo_dir);
@@ -263,33 +274,37 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn remote_name(
-    repo: &Repository,
-    config: &GrowseState,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let binding = repo.remotes()?;
-    let remotes = binding.iter().collect::<Vec<Option<&str>>>();
-    if config.remote_name.is_some() {
-        let remote_c = config.remote_name.as_ref().unwrap();
-        Ok(remote_c.to_string())
-    } else if remotes.is_empty() {
-        Err("No remote".into())
-    } else if remotes.len() > 1 {
-        // TODO config for preference?
-        println!(
-            "Warning: Multiple remotes: {:?}, choosing first {:?}",
-            remotes, remotes[0]
-        );
-        Ok(remotes[0].unwrap().to_string())
-    } else {
-        Ok(remotes[0].unwrap().to_string())
-    }
+fn default_remote(repo: &Repository) -> String {
+    return "origin".to_string();
 }
 
-fn default_branch(repo: &Repository, remote: &Remote, config: &GrowseConfig) -> Option<String> {
+// fn remote_name(
+//     repo: &Repository,
+//     config: &GrowseState,
+// ) -> Result<String, Box<dyn std::error::Error>> {
+//     let binding = repo.remotes()?;
+//     let remotes = binding.iter().collect::<Vec<Option<&str>>>();
+//     if config.remote_name.is_some() {
+//         let remote_c = config.remote_name.as_ref().unwrap();
+//         Ok(remote_c.to_string())
+//     } else if remotes.is_empty() {
+//         Err("No remote".into())
+//     } else if remotes.len() > 1 {
+//         // TODO config for preference?
+//         println!(
+//             "Warning: Multiple remotes: {:?}, choosing first {:?}",
+//             remotes, remotes[0]
+//         );
+//         Ok(remotes[0].unwrap().to_string())
+//     } else {
+//         Ok(remotes[0].unwrap().to_string())
+//     }
+// }
+
+fn default_branch(repo: &Repository, remote: &Remote, config: &GrowseConfig) -> String {
     let default_branch = remote.default_branch();
     if let Ok(default_branch) = default_branch {
-        return Some(default_branch.as_str().unwrap().to_string());
+        return default_branch.as_str().unwrap().to_string();
     } else {
         let remote_ref = format!("refs/remotes/{}/HEAD", remote.name().unwrap());
         let reference = repo.resolve_reference_from_short_name(&remote_ref);
@@ -304,14 +319,14 @@ fn default_branch(repo: &Repository, remote: &Remote, config: &GrowseConfig) -> 
                 println!("resolved: {:?}", short_name);
             }
             if short_name != Path::new("HEAD") {
-                return Some(short_name.to_str().unwrap().to_string());
+                return short_name.to_str().unwrap().to_string();
             }
         } else if config.verbose {
             println!("Could not resolve reference: {:?}", remote_ref);
         }
     }
     // TODO fall back to master or main?? lookup local remote branches?
-    None
+    "master".to_string()
 }
 
 fn open_link(url: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -330,14 +345,24 @@ mod tests {
         use_branch: false,
         // remote_priority: Some(vec![]),
     };
-    static TEST_STATE: GrowseState = GrowseState {
-        branch: None,
-        path: None,
-        current_dir: None,
-        repo_dir: None,
-        line_number: None,
-        remote_name: None,
-    };
+    fn generate_test_state() -> GrowseState {
+        GrowseState {
+            branch: "master".to_string(),
+            line_number: None,
+            path: None,
+            current_dir: "/home/takac/git-open".to_string(),
+            repo_dir: "/home/takac/git-open".to_string(),
+            // remote_name: "origin".to_string(),
+        }
+    }
+    // static TEST_STATE: GrowseState = GrowseState {
+    //     branch: "master".to_string(),
+    //     line_number: None,
+    //     path: None,
+    //     current_dir: "/home/takac/git-open".to_string(),
+    //     repo_dir: "/home/takac/git-open".to_string(),
+    //     remote_name: "origin".to_string(),
+    // };
 
     #[test]
     fn test_simple_repo_link() {
@@ -346,15 +371,16 @@ mod tests {
             "https://github.com/takac/git-open",
             "git@github.com:takac/git-open",
         ];
+        let test_state = generate_test_state();
         for url in remote_urls {
             let expected = "https://github.com/takac/git-open";
             assert_eq!(
                 expected,
-                remote_url_to_repo_url(url, &TEST_STATE, &TEST_CONFIG).unwrap()
+                remote_url_to_repo_url(url, &test_state, &TEST_CONFIG).unwrap()
             );
             assert_eq!(
                 expected,
-                remote_url_to_repo_url(&format!("{}.git", url), &TEST_STATE, &TEST_CONFIG).unwrap()
+                remote_url_to_repo_url(&format!("{}.git", url), &test_state, &TEST_CONFIG).unwrap()
             );
         }
     }
@@ -363,7 +389,7 @@ mod tests {
         for (expected, input) in expected_to_input {
             assert_eq!(
                 expected,
-                remote_url_to_repo_url(input, &TEST_STATE, &TEST_CONFIG).unwrap()
+                remote_url_to_repo_url(input, &generate_test_state(), &TEST_CONFIG).unwrap()
             );
         }
     }
@@ -398,12 +424,8 @@ mod tests {
             "git@github.com:takac/git-open",
         ];
         let state = GrowseState {
-            branch: Some("master".to_string()),
-            path: None,
-            current_dir: None,
-            repo_dir: None,
-            remote_name: None,
-            ..TEST_STATE
+            branch: "master".to_string(),
+            ..generate_test_state()
         };
 
         let config = GrowseConfig {
@@ -427,12 +449,8 @@ mod tests {
     #[test]
     fn test_bb_repo_link_with_branch() {
         let state = GrowseState {
-            branch: Some("master".to_string()),
-            path: None,
-            current_dir: None,
-            repo_dir: None,
-            remote_name: None,
-            ..TEST_STATE
+            branch: "master".to_string(),
+            ..generate_test_state()
         };
         let config = GrowseConfig {
             use_branch: true,
@@ -455,12 +473,9 @@ mod tests {
             "git@github.com:takac/git-open",
         ];
         let state = GrowseState {
-            branch: Some("main".to_string()),
+            branch: "main".to_string(),
             path: Some("src/main.rs".to_string()),
-            current_dir: Some("/home/takac/git-open".to_string()),
-            repo_dir: Some("/home/takac/git-open".to_string()),
-            remote_name: None,
-            ..TEST_STATE
+            ..generate_test_state()
         };
 
         for url in remote_urls {
@@ -484,12 +499,9 @@ mod tests {
             "git@github.com:takac/git-open",
         ];
         let state = GrowseState {
-            branch: Some("main".to_string()),
+            branch: "main".to_string(),
             path: Some("main.rs".to_string()),
-            current_dir: Some("/home/takac/git-open/src".to_string()),
-            repo_dir: Some("/home/takac/git-open".to_string()),
-            remote_name: None,
-            ..TEST_STATE
+            ..generate_test_state()
         };
 
         for url in remote_urls {
@@ -513,12 +525,10 @@ mod tests {
             "git@github.com:takac/git-open",
         ];
         let state = GrowseState {
-            branch: Some("main".to_string()),
+            branch: "main".to_string(),
             path: Some("main.rs".to_string()),
             line_number: Some(10),
-            current_dir: Some("/home/takac/git-open/src".to_string()),
-            repo_dir: Some("/home/takac/git-open".to_string()),
-            remote_name: None,
+            ..generate_test_state()
         };
 
         for url in remote_urls {
@@ -529,6 +539,32 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_repo_link_with_remote() {
+        let remote_urls = &[
+            "ssh://git@github.com/takac/git-open",
+            "https://github.com/takac/git-open",
+            "git@github.com:takac/git-open",
+        ];
+        let state = GrowseState {
+            branch: "main".to_string(),
+            path: Some("main.rs".to_string()),
+            line_number: Some(10),
+            current_dir: "/home/takac/git-open/src".to_string(),
+            repo_dir: "/home/takac/git-open".to_string(),
+            // remote_name: "origin".to_string(),
+        };
+
+        for url in remote_urls {
+            let expected = "https://github.com/takac/git-open/blob/main/src/main.rs#L10";
+            assert_eq!(
+                expected,
+                remote_url_to_repo_url(url, &state, &TEST_CONFIG).unwrap()
+            );
+        }
+    }
+
     #[test]
     fn test_load_config() {
         let config: GrowseConfigFile = toml::from_str(

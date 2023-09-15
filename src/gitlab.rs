@@ -26,7 +26,7 @@ impl Repo for GitLab {
     fn to_repo_url_with_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
         let host = self.url.host.clone().ok_or("No host found")?;
         let owner = self.url.owner.clone().ok_or("No owner found")?;
-        let branch_name = format!("refs/heads/{}", self.state.branch.as_ref().unwrap());
+        let branch_name = format!("refs/heads/{}", self.state.branch);
         let new_url = Url::parse_with_params(
             &format!(
                 "https://{}/{}/{}/-/tree/{}",

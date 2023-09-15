@@ -29,7 +29,7 @@ impl Repo for BitBucket {
 
         let branch_name = format!(
             "refs/heads/{}",
-            self.state.branch.as_ref().ok_or("No branch found")?
+            self.state.branch
         );
 
         let new_url = Url::parse_with_params(
