@@ -229,7 +229,7 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let repo = Repository::open_from_env()?;
 
     let remote_name = if cli.remote.is_none() {
-        default_remote(&repo)
+        default_remote(&repo)?
     } else {
         // TODO Manually check remote exists in repo??
         cli.remote.clone().unwrap()
@@ -258,8 +258,6 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
             .to_string(),
     };
 
-    println!("branch: {:?}", state.branch);
-
     if config.verbose {
         println!("repo_dir: {:?}", state.repo_dir);
     }
@@ -274,8 +272,20 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn default_remote(repo: &Repository) -> String {
-    return "origin".to_string();
+fn default_remote(repo: &Repository) -> Result<String,Box<dyn std::error::Error>>  {
+    let remotes = repo.remotes()?;
+    for remote in &remotes {
+        println!("remote: {:?}", remote);
+        if let Some(remote) = remote{
+            return Ok(remote.to_string());
+        }
+        // return Ok(remote.to_string());
+    }
+    Err("No remote found".into())
+    // return remotes[0].to_string();
+    // TODO Error out
+
+    // return "origin".to_string();
 }
 
 // fn remote_name(
@@ -325,7 +335,8 @@ fn default_branch(repo: &Repository, remote: &Remote, config: &GrowseConfig) -> 
             println!("Could not resolve reference: {:?}", remote_ref);
         }
     }
-    // TODO fall back to master or main?? lookup local remote branches?
+    // FIXME better strategy for finding a remote branch.
+    // look for local branches matching main or master??
     "master".to_string()
 }
 
