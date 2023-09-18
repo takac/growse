@@ -279,37 +279,9 @@ fn default_remote(repo: &Repository) -> Result<String,Box<dyn std::error::Error>
         if let Some(remote) = remote{
             return Ok(remote.to_string());
         }
-        // return Ok(remote.to_string());
     }
     Err("No remote found".into())
-    // return remotes[0].to_string();
-    // TODO Error out
-
-    // return "origin".to_string();
 }
-
-// fn remote_name(
-//     repo: &Repository,
-//     config: &GrowseState,
-// ) -> Result<String, Box<dyn std::error::Error>> {
-//     let binding = repo.remotes()?;
-//     let remotes = binding.iter().collect::<Vec<Option<&str>>>();
-//     if config.remote_name.is_some() {
-//         let remote_c = config.remote_name.as_ref().unwrap();
-//         Ok(remote_c.to_string())
-//     } else if remotes.is_empty() {
-//         Err("No remote".into())
-//     } else if remotes.len() > 1 {
-//         // TODO config for preference?
-//         println!(
-//             "Warning: Multiple remotes: {:?}, choosing first {:?}",
-//             remotes, remotes[0]
-//         );
-//         Ok(remotes[0].unwrap().to_string())
-//     } else {
-//         Ok(remotes[0].unwrap().to_string())
-//     }
-// }
 
 fn default_branch(repo: &Repository, remote: &Remote, config: &GrowseConfig) -> String {
     let default_branch = remote.default_branch();
@@ -354,8 +326,8 @@ mod tests {
         verbose: true,
         no_show: false,
         use_branch: false,
-        // remote_priority: Some(vec![]),
     };
+
     fn generate_test_state() -> GrowseState {
         GrowseState {
             branch: "master".to_string(),
@@ -363,17 +335,8 @@ mod tests {
             path: None,
             current_dir: "/home/takac/git-open".to_string(),
             repo_dir: "/home/takac/git-open".to_string(),
-            // remote_name: "origin".to_string(),
         }
     }
-    // static TEST_STATE: GrowseState = GrowseState {
-    //     branch: "master".to_string(),
-    //     line_number: None,
-    //     path: None,
-    //     current_dir: "/home/takac/git-open".to_string(),
-    //     repo_dir: "/home/takac/git-open".to_string(),
-    //     remote_name: "origin".to_string(),
-    // };
 
     #[test]
     fn test_simple_repo_link() {
@@ -512,6 +475,7 @@ mod tests {
         let state = GrowseState {
             branch: "main".to_string(),
             path: Some("main.rs".to_string()),
+            current_dir: "/home/takac/git-open/src".to_string(),
             ..generate_test_state()
         };
 
@@ -537,7 +501,7 @@ mod tests {
         ];
         let state = GrowseState {
             branch: "main".to_string(),
-            path: Some("main.rs".to_string()),
+            path: Some("src/main.rs".to_string()),
             line_number: Some(10),
             ..generate_test_state()
         };
