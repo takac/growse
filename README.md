@@ -70,7 +70,7 @@ handled.
 | Backend        | Repo     | Branch    | File path   | File path with Line No.    | File path with line range |
 | -------------- | -------- | --------- | ----------- | -------------------------- | --------------------      |
 | GitHub         | ✅ Yes   | ✅ Yes    | ✅ Yes      | ✅ Yes                     | ❌ No                     |
-| Bitbucket      | ✅  Yes  | ✅ Yes    | ❌ No       | ❌ No                      | ❌ No                     |
+| Bitbucket      | ✅  Yes  | ✅ Yes    | ✅ Yes      | ✅ Yes                     | ❌ No                     |
 | Gitlab         | ✅ Yes   | ❌ No     | ❌ No       | ❌ No                      | ❌ No                     |
 | Others         | ❌ No    | ❌ No     | ❌ No       | ❌ No                      | ❌ No                     |
 

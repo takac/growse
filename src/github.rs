@@ -12,50 +12,40 @@ impl Repo for GitHub {
     fn to_repo_url_with_path_and_branch_and_line_number(
         &self,
     ) -> Result<String, Box<dyn std::error::Error>> {
-        Ok(format!(
-            "{}#L{}",
-            self.to_repo_url_with_path_and_branch().unwrap(),
-            self.state.line_number.unwrap()
-        ))
+        let url = self.to_repo_url_with_path_and_branch().unwrap();
+        let line_number = self.state.line_number.unwrap();
+
+        Ok(format!("{url}#L{line_number}"))
     }
 
     fn to_repo_url_with_path_and_line_number(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Ok(format!(
-            "{}#L{}",
-            self.to_repo_url_with_path().unwrap(),
-            self.state.line_number.unwrap()
-        ))
+        let url = self.to_repo_url_with_path().unwrap();
+        let line_number = self.state.line_number.unwrap();
+
+        Ok(format!("{url}#L{line_number}"))
     }
 
     fn to_repo_url_with_path(&self) -> Result<String, Box<dyn std::error::Error>> {
-        let host = self.url.host.clone().ok_or("No host found")?;
         let branch = &self.state.branch;
+        let fullname = &self.url.fullname;
+        let host = self.url.host.clone().ok_or("No host found")?;
+        let path = self.state.path.clone().ok_or("No path found")?;
 
-        let path = if self.state.current_dir == self.state.repo_dir {
-            self.state.path.clone().ok_or("No path found")?
-        } else {
-            let repo_dir = &self.state.repo_dir;
-            let current_dir = &self.state.current_dir;
-            let offset_path = current_dir.strip_prefix(&format!("{}/", repo_dir)).unwrap();
-            format!("{}/{}", offset_path, self.state.path.as_ref().unwrap())
-        };
-        Ok(format!(
-            "https://{}/{}/blob/{}/{}",
-            host, self.url.fullname, branch, path,
-        ))
+        Ok(format!("https://{host}/{fullname}/blob/{branch}/{path}"))
     }
 
     fn to_repo_url_with_branch(&self) -> Result<String, Box<dyn std::error::Error>> {
         let host = self.url.host.clone().ok_or("No host found")?;
+        let branch = &self.state.branch;
+        let fullname = &self.url.fullname;
 
-        Ok(format!(
-            "https://{}/{}/tree/{}",
-            host, self.url.fullname, self.state.branch
-        ))
+        Ok(format!("https://{host}/{fullname}/tree/{branch}"))
     }
 
     fn to_repo_url(&self) -> Result<String, Box<dyn std::error::Error>> {
         let host = self.url.host.clone().ok_or("No host found")?;
-        Ok(format!("https://{}/{}", host, self.url.fullname))
+        let fullname = &self.url.fullname;
+
+        Ok(format!("https://{host}/{fullname}"))
     }
 }

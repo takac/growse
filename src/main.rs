@@ -3,6 +3,7 @@ mod github;
 mod gitlab;
 
 use clap::CommandFactory;
+
 use clap::*;
 use clap_complete::*;
 use git2::{Remote, Repository};
@@ -67,9 +68,6 @@ struct GrowseConfig {
 struct GrowseState {
     path: Option<String>,
     line_number: Option<u32>,
-    current_dir: String,
-    repo_dir: String,
-    // remote_name: String,
     branch: String,
 }
 
@@ -97,6 +95,7 @@ duplicate! {
         state: GrowseState,
     }
     impl RepoUrler for name {
+
         fn to_url(&self) -> Result<String, Box<dyn std::error::Error>> {
             if self.config.use_branch {
                 if self.state.path.is_some() {
@@ -227,6 +226,22 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let repo = Repository::open_from_env()?;
+    let current_dir = std::env::current_dir()?.to_str().unwrap().to_string();
+    let repo_dir = repo
+        .path()
+        .parent()
+        .ok_or("No parent found")?
+        .to_string_lossy()
+        .to_string();
+
+    // probably a better way to do this...
+    // construct path from repo root
+    let path = if current_dir == repo_dir {
+        path
+    } else {
+        let offset_path = current_dir.strip_prefix(&format!("{}/", repo_dir)).unwrap();
+        Some(format!("{}/{}", offset_path, path.unwrap()))
+    };
 
     let remote_name = if cli.remote.is_none() {
         default_remote(&repo)?
@@ -247,19 +262,11 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let state = GrowseState {
         path,
         line_number,
-        // remote_name,
         branch,
-        current_dir: std::env::current_dir()?.to_str().unwrap().to_string(),
-        repo_dir: repo
-            .path()
-            .parent()
-            .ok_or("No parent found")?
-            .to_string_lossy()
-            .to_string(),
     };
 
     if config.verbose {
-        println!("repo_dir: {:?}", state.repo_dir);
+        println!("repo_dir: {:?}", repo_dir);
     }
 
     let link_url = remote_url_to_repo_url(git_url, &state, &config)?;
@@ -273,14 +280,12 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn default_remote(repo: &Repository) -> Result<String, Box<dyn std::error::Error>> {
-    let remotes = repo.remotes()?;
-    for remote in &remotes {
-        println!("remote: {:?}", remote);
-        if let Some(remote) = remote {
-            return Ok(remote.to_string());
-        }
+    let remote_names = repo.remotes()?;
+    let mut remotes = (&remote_names).into_iter().flatten();
+    if let Some(remote) = remotes.next() {
+        return Ok(remote.to_string());
     }
-    Err("No remote found".into())
+    Err("No remotes found".into())
 }
 
 fn default_branch(repo: &Repository, remote: &Remote, config: &GrowseConfig) -> String {
@@ -333,8 +338,6 @@ mod tests {
             branch: "master".to_string(),
             line_number: None,
             path: None,
-            current_dir: "/home/takac/git-open".to_string(),
-            repo_dir: "/home/takac/git-open".to_string(),
         }
     }
 
@@ -474,8 +477,7 @@ mod tests {
         ];
         let state = GrowseState {
             branch: "main".to_string(),
-            path: Some("main.rs".to_string()),
-            current_dir: "/home/takac/git-open/src".to_string(),
+            path: Some("src/main.rs".to_string()),
             ..generate_test_state()
         };
 
@@ -503,7 +505,6 @@ mod tests {
             branch: "main".to_string(),
             path: Some("src/main.rs".to_string()),
             line_number: Some(10),
-            ..generate_test_state()
         };
 
         for url in remote_urls {
@@ -524,11 +525,8 @@ mod tests {
         ];
         let state = GrowseState {
             branch: "main".to_string(),
-            path: Some("main.rs".to_string()),
+            path: Some("src/main.rs".to_string()),
             line_number: Some(10),
-            current_dir: "/home/takac/git-open/src".to_string(),
-            repo_dir: "/home/takac/git-open".to_string(),
-            // remote_name: "origin".to_string(),
         };
 
         for url in remote_urls {
