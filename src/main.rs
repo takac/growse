@@ -272,11 +272,11 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn default_remote(repo: &Repository) -> Result<String,Box<dyn std::error::Error>>  {
+fn default_remote(repo: &Repository) -> Result<String, Box<dyn std::error::Error>> {
     let remotes = repo.remotes()?;
     for remote in &remotes {
         println!("remote: {:?}", remote);
-        if let Some(remote) = remote{
+        if let Some(remote) = remote {
             return Ok(remote.to_string());
         }
     }

@@ -27,10 +27,7 @@ impl Repo for BitBucket {
         let host = self.url.host.clone().ok_or("No host found")?;
         let owner = self.url.owner.clone().ok_or("No owner found")?;
 
-        let branch_name = format!(
-            "refs/heads/{}",
-            self.state.branch
-        );
+        let branch_name = format!("refs/heads/{}", self.state.branch);
 
         let new_url = Url::parse_with_params(
             &format!(

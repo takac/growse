@@ -50,9 +50,7 @@ impl Repo for GitHub {
 
         Ok(format!(
             "https://{}/{}/tree/{}",
-            host,
-            self.url.fullname,
-            self.state.branch
+            host, self.url.fullname, self.state.branch
         ))
     }
 
