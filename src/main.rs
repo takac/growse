@@ -46,7 +46,7 @@ struct Cli {
 }
 
 // TODO XDG_CONFIG_HOME
-const DEFAULT_CONFIG_FILE: &str = "./config/growse.toml";
+const CONFIG_FILE: &str = "growse.toml";
 
 #[derive(Debug, Deserialize, Clone)]
 struct GrowseConfigFile {
@@ -195,7 +195,9 @@ fn config(cli: &Cli) -> Result<GrowseConfig, Box<dyn std::error::Error>> {
         }
     } else {
         // lookup default config file
-        if Path::new(DEFAULT_CONFIG_FILE).exists() {
+        let config_dir = dirs::config_dir().ok_or("No config dir found")?;
+        let config_path = config_dir.join(CONFIG_FILE);
+        if config_path.exists() {
             let config: GrowseConfigFile =
                 toml::from_str(&std::fs::read_to_string(cli.config_file.clone().unwrap())?)?;
             Ok(merge_config_cli(cli, &config.growse))

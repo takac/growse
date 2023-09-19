@@ -7,12 +7,13 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.3.19", features = ["derive", "env"] }
 git-url-parse = "0.4.4"
-git2 = "0.17.2"
+git2 = "0.18.0"
 log = "0.4.19"
 open = "5.0.0"
 regex = "1.9.3"
 serde = { version = "1.0.183", features = ["derive"] }
-toml = "0.7.6"
+toml = "0.8.0"
 url = "2.4.0"
 duplicate = "1.0.0"
 clap_complete = "4.3.2"
+dirs = "5.0"
