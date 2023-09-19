@@ -65,7 +65,7 @@ struct GrowseConfig {
     current_branch: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct GrowseState {
     path: Option<String>,
     line_number: Option<u32>,
@@ -201,7 +201,7 @@ fn config(cli: &Cli) -> Result<GrowseConfig, Box<dyn std::error::Error>> {
             Ok(merge_config_cli(cli, &config.growse))
         } else {
             Ok(GrowseConfig {
-                use_branch: cli.branch.is_some(),
+                use_branch: cli.branch.is_some() || cli.current_branch.unwrap_or(false),
                 no_show: cli.no_show.unwrap_or(false),
                 verbose: cli.verbose.unwrap_or(false),
                 current_branch: cli.current_branch.unwrap_or(false),
@@ -212,6 +212,9 @@ fn config(cli: &Cli) -> Result<GrowseConfig, Box<dyn std::error::Error>> {
 
 fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config = config(cli)?;
+    if config.verbose {
+        println!("config: {:?}", config);
+    }
 
     // TODO check if file exists locally??
     let (path, line_number) = if let Some(path) = cli.path.as_deref() {
@@ -273,15 +276,16 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if config.verbose {
+        println!("state: {:?}", state);
         println!("repo_dir: {:?}", repo_dir);
     }
 
     let link_url = remote_url_to_repo_url(git_url, &state, &config)?;
 
-    if !config.no_show {
-        open_link(&link_url)?;
-    } else {
+    if config.no_show {
         println!("{}", link_url);
+    } else {
+        open_link(&link_url)?;
     }
     Ok(())
 }
