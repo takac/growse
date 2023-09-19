@@ -17,29 +17,32 @@ use std::path::Path;
 use url::Url;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, group(ArgGroup::new("branch_group").args(&["current_branch", "branch"])))]
 struct Cli {
     // Path to file in repo
     #[arg(value_hint = ValueHint::FilePath)]
     path: Option<String>,
 
-    #[arg(short, long)]
+    #[arg(short, long, action=ArgAction::SetTrue)]
     no_show: Option<bool>,
 
-    #[arg(short, long)]
+    #[arg(short, long, action=ArgAction::SetTrue)]
     verbose: Option<bool>,
 
-    #[arg(short, long, env = "GROWSE_BRANCH")]
+    #[arg(short, long, group = "branch_group", env = "GROWSE_BRANCH")]
     branch: Option<String>,
 
     #[arg(short, long, env = "GROWSE_REMOTE")]
     remote: Option<String>,
 
-    #[arg(short, long, env = "GROWSE_CONFIG_FILE")]
+    #[arg(long, env = "GROWSE_CONFIG_FILE")]
     config_file: Option<String>,
 
     #[arg(long, value_name = "SHELL", value_parser, hide = true)]
     completion: Option<Shell>,
+
+    #[arg(short, long, group = "branch_group", action=ArgAction::SetTrue)]
+    current_branch: Option<bool>,
 }
 
 // TODO XDG_CONFIG_HOME
@@ -52,16 +55,14 @@ struct GrowseConfigFile {
 
 #[derive(Debug, Deserialize, Clone)]
 struct GrowseConfig {
-    // branch: Option<String>,
-    // remote_priority: Option<Vec<String>>,
     #[serde(default)]
     use_branch: bool,
     #[serde(default)]
     no_show: bool,
     #[serde(default)]
     verbose: bool,
-    // #[serde(default)]
-    // hosts: Option<HashMap<String, String>>,
+    #[serde(default)]
+    current_branch: bool,
 }
 
 #[derive(Clone)]
@@ -171,7 +172,8 @@ fn main() {
 
 fn merge_config_cli(cli: &Cli, config: &GrowseConfig) -> GrowseConfig {
     let mut config = config.clone();
-    config.use_branch = cli.branch.is_some();
+    config.current_branch = cli.current_branch.unwrap_or(false);
+    config.use_branch = cli.branch.is_some() || config.current_branch;
     if cli.no_show.is_some() {
         config.no_show = cli.no_show.unwrap();
     }
@@ -202,6 +204,7 @@ fn config(cli: &Cli) -> Result<GrowseConfig, Box<dyn std::error::Error>> {
                 use_branch: cli.branch.is_some(),
                 no_show: cli.no_show.unwrap_or(false),
                 verbose: cli.verbose.unwrap_or(false),
+                current_branch: cli.current_branch.unwrap_or(false),
             })
         }
     }
@@ -251,8 +254,12 @@ fn run(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     };
     let remote = repo.find_remote(&remote_name)?;
 
-    let branch = if cli.branch.is_some() {
-        cli.branch.clone().unwrap()
+    let branch = if config.use_branch {
+        if config.current_branch {
+            repo.head().unwrap().shorthand().unwrap().to_string()
+        } else {
+            cli.branch.clone().unwrap()
+        }
     } else {
         default_branch(&repo, &remote, &config)
     };
@@ -331,6 +338,7 @@ mod tests {
         verbose: true,
         no_show: false,
         use_branch: false,
+        current_branch: false,
     };
 
     fn generate_test_state() -> GrowseState {
@@ -547,7 +555,6 @@ mod tests {
             "#,
         )
         .unwrap();
-        // config.growse.into
         assert!(config.growse.verbose);
     }
 }
