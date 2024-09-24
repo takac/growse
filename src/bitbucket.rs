@@ -79,7 +79,6 @@ impl Repo for BitBucket {
     }
 
     fn to_repo_url(&self) -> Result<String, Box<dyn std::error::Error>> {
-
         let host = self.url.host.clone().ok_or("No host found")?;
         let owner = self.url.owner.clone().ok_or("No owner found")?;
         let name = self.url.name.clone();

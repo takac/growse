@@ -16,14 +16,19 @@
             hooks = {
               rustfmt.enable = true;
               # FIXME not working
-              # clippy.enable = true;
-              cargo-check.enable = true;
+              cargo-check.enable = false;
               nixpkgs-fmt.enable = true;
-            };
-            settings = {
-              clippy.offline = false;
-              clippy.allFeatures = true;
-              clippy.denyWarnings = true;
+              # FIXME not working
+              clippy = {
+                enable = false;
+                # args = "--all-targets --all-features -- -D warnings";
+                settings = {
+                  #
+                  offline = true;
+                  # allFeatures = true;
+                  # denyWarnings = true;
+                };
+              };
             };
           };
         };

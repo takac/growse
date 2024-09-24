@@ -1,7 +1,8 @@
 # build = "build.rs"
 [package]
 name = "growse"
-version = "0.1.0"
+version = "0.2.0"
+rust-version = "1.74"
 edition = "2021"
 
 [dependencies]

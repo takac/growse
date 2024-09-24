@@ -4,7 +4,7 @@ pkgs.rustPlatform.buildRustPackage {
   version = "0.1";
   cargoLock.lockFile = ./Cargo.lock;
   src = pkgs.lib.cleanSource ./.;
-  nativeBuildInputs = [ pkgs.pkgconfig ];
+  nativeBuildInputs = [ pkgs.pkg-config ];
   buildInputs = (
     if (pkgs.stdenv.isDarwin) then
       [
